@@ -5,11 +5,75 @@
 #include "mmu.h"
 #include "proc.h"
 #include "x86.h"
+#include "multiboot.h"
 
 static void startothers(void);
 static void mpmain(void)  __attribute__((noreturn));
 extern pde_t *kpgdir;
 extern char end[]; // first address after kernel loaded from ELF file
+
+// multiboot_info_ptr: 由 entry.S 在分页前写入的 multiboot_info 物理地址
+// 0 = 传统 bootloader 启动；非 0 = GRUB Multiboot 启动
+extern uint multiboot_info_ptr;
+
+// parse_multiboot — 解析 GRUB 传递的 Multiboot 信息并打印
+//
+// 必须在 kvmalloc() 之后调用（需要内核虚拟地址映射，用于 P2V 转换），
+// 且在 consoleinit()/uartinit() 之后调用（确保 cprintf 输出有效）。
+//
+// OS 设计要点:
+//   multiboot_info_ptr 是物理地址，需要 P2V() 转换后才能在 C 中解引用。
+//   GRUB 在低端物理内存构造 multiboot_info 结构，xv6 页表将低端物理内存
+//   恒等映射到 KERNBASE 以上的虚拟地址，所以 P2V 在此合法有效。
+static void
+parse_multiboot(void)
+{
+  struct multiboot_info *mbi;
+  struct multiboot_mmap_entry *mmap;
+  uint mmap_end;
+
+  if (multiboot_info_ptr == 0) {
+    cprintf("multiboot: traditional bootloader (xv6 bootblock)\n");
+    return;
+  }
+
+  // P2V: 将 GRUB 提供的物理地址转为内核虚拟地址
+  mbi = (struct multiboot_info *)P2V(multiboot_info_ptr);
+  cprintf("multiboot: GRUB Multiboot-compliant bootloader detected\n");
+
+  // 打印 bootloader 名称
+  if (mbi->flags & MBI_LOADER) {
+    cprintf("multiboot: loader = \"%s\"\n",
+            (char *)P2V(mbi->boot_loader_name));
+  }
+
+  // 打印内存大小信息
+  if (mbi->flags & MBI_MEM_INFO) {
+    cprintf("multiboot: mem_lower = %dKB, mem_upper = %dKB (~%dMB)\n",
+            mbi->mem_lower, mbi->mem_upper, mbi->mem_upper / 1024);
+  }
+
+  // 打印详细内存映射 (E820 等价)
+  if (mbi->flags & MBI_MMAP) {
+    cprintf("multiboot: memory map (addr/len/type):\n");
+    mmap_end = mbi->mmap_addr + mbi->mmap_length;
+    mmap = (struct multiboot_mmap_entry *)P2V(mbi->mmap_addr);
+    while ((uint)mmap < (uint)P2V(mmap_end)) {
+      cprintf("  [%x - %x] %s\n",
+              mmap->addr_lo,
+              mmap->addr_lo + mmap->len_lo - 1,
+              mmap->type == MULTIBOOT_MMAP_AVAILABLE ? "usable" : "reserved");
+      // 迭代: mmap->size 不含自身的 4 字节，故加 sizeof(mmap->size)
+      mmap = (struct multiboot_mmap_entry *)
+             ((char *)mmap + mmap->size + sizeof(mmap->size));
+    }
+  }
+
+  // 打印启动设备
+  if (mbi->flags & MBI_BOOT_DEV) {
+    cprintf("multiboot: boot_device = 0x%x\n", mbi->boot_device);
+  }
+}
 
 // Bootstrap processor starts running C code here.
 // Allocate a real stack and switch to it, first
@@ -26,6 +90,7 @@ main(void)
   ioapicinit();    // another interrupt controller
   consoleinit();   // console hardware
   uartinit();      // serial port
+  parse_multiboot(); // 解析 Multiboot 信息（需要 console 和虚拟地址映射）
   pinit();         // process table
   tvinit();        // trap vectors
   binit();         // buffer cache
@@ -106,11 +171,3 @@ pde_t entrypgdir[NPDENTRIES] = {
   // Map VA's [KERNBASE, KERNBASE+4MB) to PA's [0, 4MB)
   [KERNBASE>>PDXSHIFT] = (0) | PTE_P | PTE_W | PTE_PS,
 };
-
-//PAGEBREAK!
-// Blank page.
-//PAGEBREAK!
-// Blank page.
-//PAGEBREAK!
-// Blank page.
-

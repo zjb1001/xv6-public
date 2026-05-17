@@ -10,7 +10,8 @@ bootblock
 entryother
 initcode
 initcode.out
-kernel
-kernelmemfs
-mkfs
+build/xv6kernel
+build/kernelmemfs
+build/mkfs
 .gdbinit
+lab-Tests/
