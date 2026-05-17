@@ -137,13 +137,15 @@ make clean        # 清理
 | `make apply` | 仅应用补丁（幂等，可重复执行） |
 | `make unapply` | 通过 `git restore` 撤销所有补丁并删除测试程序 |
 | `make clean` | 清理编译产物（不撤销补丁） |
+| `make start` | **一键启动**：apply + 编译 + 运行（`qemu-nox`），进入 xv6 shell 后运行测试程序，`Ctrl-A X` 退出 QEMU |
+| `make exit` | **一键退出**：clean + unapply，退出 QEMU 后执行以恢复源码树 |
 
 ### Makefile 模板结构
 
 ```makefile
 XVROOT := ../..
 
-.PHONY: all qemu qemu-nox qemu-gdb apply unapply clean
+.PHONY: all qemu qemu-nox qemu-gdb apply unapply clean start exit
 
 all: apply
 	$(MAKE) -C $(XVROOT)
@@ -175,6 +177,13 @@ unapply:
 
 clean:
 	$(MAKE) -C $(XVROOT) clean
+
+# 一键启动：补丁 + 编译 + 进入 xv6（Ctrl-A X 退出 QEMU）
+start: apply
+	$(MAKE) -C $(XVROOT) qemu-nox
+
+# 一键退出：清理编译产物 + 恢复源码树
+exit: clean unapply
 ```
 
 ### 文件路径映射

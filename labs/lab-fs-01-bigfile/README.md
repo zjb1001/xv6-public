@@ -26,7 +26,7 @@ Core question: *"The inode has a fixed size. How do limited pointers to disk blo
 
 - **xv6 inode structure**: `struct dinode` in `include/fs.h`, `addrs[NDIRECT+1]` stores block numbers, the last one is the indirect block pointer
 - **Indirect addressing**: The indirect block itself does not store data; its contents are an array of data block numbers (`uint addrs[NINDIRECT]`, NINDIRECT=128)
-- **`bmap(ip, bn)` function**: In `src/fs.c`, converts a file's logical block number `bn` to a physical disk block number; the core of file system addressing
+- **`bmap(ip, bn)` function**: In `kernel/fs.c`, converts a file's logical block number `bn` to a physical disk block number; the core of file system addressing
 - **`itrunc(ip)` function**: Frees all data blocks when truncating a file; must recursively free indirect blocks
 
 ```
@@ -58,9 +58,9 @@ struct dinode {
 };
 ```
 
-**Synchronize** the `addrs` field size in the in-memory inode `struct inode` in `include/file.h`.
+**Synchronize** the `addrs` field size in the in-memory inode `struct inode` in `kernel/file.h`.
 
-### 2. Modify bmap: handle doubly indirect blocks (src/fs.c)
+### 2. Modify bmap: handle doubly indirect blocks (kernel/fs.c)
 
 `bmap(ip, bn)` currently handles direct blocks and single indirect blocks. Add doubly indirect handling at the end:
 
@@ -82,7 +82,7 @@ panic("bmap: out of range");
 
 **Hint**: You need two `bread`/`brelse` operations — first to read the doubly indirect block, second to read the indirect block. Use `log_write` to mark blocks as dirty when modifying.
 
-### 3. Modify itrunc: recursively free doubly indirect blocks (src/fs.c)
+### 3. Modify itrunc: recursively free doubly indirect blocks (kernel/fs.c)
 
 `itrunc` currently frees direct blocks and single indirect blocks. Add doubly indirect block freeing logic at the end:
 
@@ -138,8 +138,8 @@ if(ip->addrs[NDIRECT+1]) {
 | File | Change Type | Description |
 |------|------------|-------------|
 | include/fs.h | Modify | Add `NDINDIRECT`, modify `MAXFILE`, `addrs[NDIRECT+2]` |
-| include/file.h | Modify | Synchronize in-memory inode's `addrs` size |
-| src/fs.c | Modify | Add doubly indirect handling in `bmap`, add doubly indirect freeing in `itrunc` |
+| kernel/file.h | Modify | Synchronize in-memory inode's `addrs` size |
+| kernel/fs.c | Modify | Add doubly indirect handling in `bmap`, add doubly indirect freeing in `itrunc` |
 | tools/mkfs.c | Modify | Synchronize `MAXFILE` and inode structure |
 | user/bigfiletest.c | New | Large file read/write test |
 | Makefile | Modify | Add `bigfiletest` |
