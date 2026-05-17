@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git commit *)",
+      "Bash(xargs -d '\\\\n' git add)"
+    ]
+  }
+}
