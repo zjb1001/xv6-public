@@ -6,7 +6,7 @@ Difficulty: ★★★★☆
 
 ## Motivation
 
-The xv6 buffer cache (`src/bio.c`) uses a fixed number of `NBUF=30` buffer blocks. When all buffers are occupied, the `bget` function must evict a "least recently used" block. However, the original implementation only uses a **linear scan** to find any block with `refcnt=0`, without truly implementing an LRU policy — which block gets evicted depends on its position in the array, not its usage time.
+The xv6 buffer cache (`kernel/bio.c`) uses a fixed number of `NBUF=30` buffer blocks. When all buffers are occupied, the `bget` function must evict a "least recently used" block. However, the original implementation only uses a **linear scan** to find any block with `refcnt=0`, without truly implementing an LRU policy — which block gets evicted depends on its position in the array, not its usage time.
 
 This lab transforms the buffer list into a **strict LRU doubly-linked list**:
 
@@ -36,7 +36,7 @@ Eviction (miss): search from tail (D's predecessor) direction for refcnt==0
 
 ## Lab Tasks
 
-### 1. Understand and diagram the original list structure (src/bio.c)
+### 1. Understand and diagram the original list structure (kernel/bio.c)
 
 Before making changes, read `binit`, `bget`, and `brelse` in `bio.c`, and draw:
 - The initial state of the `bcache.head` doubly circular linked list
@@ -45,7 +45,7 @@ Before making changes, read `binit`, `bget`, and `brelse` in `bio.c`, and draw:
 
 **Question**: Does the original code implement strict LRU? Does eviction select the "least recently used" or the "first refcnt=0"?
 
-### 2. Move blocks to the MRU end on bget hit (src/bio.c)
+### 2. Move blocks to the MRU end on bget hit (kernel/bio.c)
 
 In the hit path of `bget` (found matching dev/blockno), add a "move to head" operation:
 
@@ -62,7 +62,7 @@ bcache.head.next = b;
 
 **Note**: The move operation must be performed under `bcache.lock` protection (already held in `bget`).
 
-### 3. Search from the LRU end during eviction in bget (src/bio.c)
+### 3. Search from the LRU end during eviction in bget (kernel/bio.c)
 
 The original `bget` eviction loop traverses the list **forward** (from head onward). Change it to traverse **backward** (from tail back), finding the least recently used block with `refcnt==0`:
 
@@ -89,7 +89,7 @@ for(b = bcache.head.prev; b != &bcache.head; b = b->prev) {
 }
 ```
 
-### 4. Move blocks to the MRU end in brelse (src/bio.c)
+### 4. Move blocks to the MRU end in brelse (kernel/bio.c)
 
 When `brelse` decrements `refcnt` to 0, the block becomes eligible for eviction again. To keep recently released blocks on the MRU side of the LRU list (indicating it was "recently used"), also perform a "move after head" operation in the `refcnt==0` branch of `brelse`:
 
@@ -130,17 +130,21 @@ Design an access pattern where LRU hit rate is significantly better than random 
 
 | File | Change Type | Description |
 |------|------------|-------------|
-| src/bio.c | Modify | `bget` moves to MRU on hit, evicts from LRU end; `brelse` moves to MRU end |
+| kernel/bio.c | Modify | `bget` moves to MRU on hit, evicts from LRU end; `brelse` moves to MRU end |
 | include/buf.h | Modify (optional) | Add `hit`/`miss` counters to the `bcache` structure |
 | user/lrucachetest.c | New | Test program verifying LRU hit rate |
-| Makefile | Modify | Add `lrucachetest` |
+| lab-Tests/lab-fs-03-lrucache/Makefile | Use | Idempotently apply patches and launch xv6 (`make start`) |
 
 ## Verification
 
 ```bash
-make clean && make qemu-nox
-$ lrucachetest
-$ usertests
+cd lab-Tests/lab-fs-03-lrucache
+make start
+# inside xv6 shell
+lrucachetest
+usertests
+# quit QEMU with Ctrl-A X, then restore tree
+make exit
 ```
 
 ### Verification Goals

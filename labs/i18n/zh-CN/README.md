@@ -2,7 +2,7 @@
 
 [English](../../README.md)
 
-本目录包含 xv6 教学操作系统的实验内容，覆盖 Boot 启动、用户库、内存管理、文件系统、调度、进程管理和同步七大系列，共 28 个实验。
+本目录包含 xv6 教学操作系统的实验内容，覆盖 Boot 启动、用户库、内存管理、文件系统、调度、进程管理和同步七大系列，共 29 个实验。
 
 ## 可用实验
 
@@ -24,6 +24,7 @@
 | 实验 | 难度 | 描述 | 关键文件 |
 |------|------|------|----------|
 | [lab-userspace](../../lab-userspace/) | ★★☆☆☆ | 用户身份与文件权限管理 | src/sysproc.c, src/sysfile.c, src/fs.c |
+| [lab-userspace-01-shell-edit](../../lab-userspace-01-shell-edit/) | ★★★☆☆ | 交互式 shell 行编辑（Tab 补全 + 历史命令） | user/sh.c |
 | [lab-fifo-sched](../../lab-fifo-sched/) | ★★☆☆☆ | FIFO 非抢占式队列调度器 | src/proc.c, src/trap.c, include/proc.h |
 
 ### lib 用户库系列
@@ -142,6 +143,7 @@ labs/
 ├── lab-boot-06-customfmt/ # 自定义内核镜像格式
 │
 ├── lab-userspace/         # 用户身份与文件权限
+├── lab-userspace-01-shell-edit/ # shell 行编辑（Tab + 历史）
 ├── lab-fifo-sched/        # FIFO 非抢占式调度器
 │
 ├── lab-lib-01-malloc/     # 用户态堆分配器

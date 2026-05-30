@@ -2,7 +2,7 @@
 
 [中文](i18n/zh-CN/README.md)
 
-This directory contains lab exercises for the xv6 teaching operating system, spanning seven series -- Boot, User Libraries, Memory Management, File Systems, Scheduling, Process Management, and Synchronization -- with a total of 28 labs.
+This directory contains lab exercises for the xv6 teaching operating system, spanning seven series -- Boot, User Libraries, Memory Management, File Systems, Scheduling, Process Management, and Synchronization -- with a total of 29 labs.
 
 ## Available Labs
 
@@ -24,6 +24,7 @@ A set of modification labs centered around the xv6 boot chain (bootasm -> bootma
 | Lab | Difficulty | Description | Key Files |
 |-----|------------|-------------|-----------|
 | [lab-userspace](lab-userspace/) | ★★☆☆☆ | User identity and file permission management | src/sysproc.c, src/sysfile.c, src/fs.c |
+| [lab-userspace-01-shell-edit](lab-userspace-01-shell-edit/) | ★★★☆☆ | Interactive shell line editor (Tab completion + history keys) | user/sh.c |
 | [lab-fifo-sched](lab-fifo-sched/) | ★★☆☆☆ | FIFO non-preemptive queue scheduler | src/proc.c, src/trap.c, include/proc.h |
 
 ### lib User Library Series
@@ -142,6 +143,7 @@ labs/
 +-- lab-boot-06-customfmt/ # Custom kernel image format
 |
 +-- lab-userspace/         # User identity and file permissions
++-- lab-userspace-01-shell-edit/ # Shell line editor (Tab + history)
 +-- lab-fifo-sched/        # FIFO non-preemptive scheduler
 |
 +-- lab-lib-01-malloc/     # User-space heap allocator

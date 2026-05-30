@@ -6,7 +6,7 @@
 
 ## 设计初衷
 
-xv6 的缓冲区缓存（`src/bio.c`）使用固定大小的 `NBUF=30` 个缓冲块。当所有缓冲块都被占用时，`bget` 函数需要驱逐（evict）一个"最近最少使用"的块。但原始实现仅使用**线性扫描**找到任意一个 `refcnt=0` 的块，没有真正实现 LRU 策略——驱逐哪个块取决于数组位置而非使用时间。
+xv6 的缓冲区缓存（`kernel/bio.c`）使用固定大小的 `NBUF=30` 个缓冲块。当所有缓冲块都被占用时，`bget` 函数需要驱逐（evict）一个"最近最少使用"的块。但原始实现仅使用**线性扫描**找到任意一个 `refcnt=0` 的块，没有真正实现 LRU 策略——驱逐哪个块取决于数组位置而非使用时间。
 
 本实验将缓冲区链表改造为**严格 LRU 双向链表**：
 
@@ -36,7 +36,7 @@ head ↔ [块B] ↔ [块A] ↔ [块C] ↔ [块D] ↔ head
 
 ## 实验内容
 
-### 1. 理解并绘制原始链表结构 (src/bio.c)
+### 1. 理解并绘制原始链表结构 (kernel/bio.c)
 
 在动手修改前，阅读 `bio.c` 的 `binit`、`bget`、`brelse`，画出：
 - `bcache.head` 双向循环链表的初始状态
@@ -45,7 +45,7 @@ head ↔ [块B] ↔ [块A] ↔ [块C] ↔ [块D] ↔ head
 
 **问题**：原始代码是否实现了严格 LRU？驱逐时选择的是"最久未使用"还是"第一个 refcnt=0"？
 
-### 2. 在 bget 命中时将块移到 MRU 端 (src/bio.c)
+### 2. 在 bget 命中时将块移到 MRU 端 (kernel/bio.c)
 
 在 `bget` 的命中路径（找到匹配的 dev/blockno）中，添加"移到链表头"操作：
 
@@ -62,7 +62,7 @@ bcache.head.next = b;
 
 **注意**: 移动操作必须在 `bcache.lock` 保护下进行（已在 `bget` 中加锁）。
 
-### 3. 在 bget 驱逐时从 LRU 端查找 (src/bio.c)
+### 3. 在 bget 驱逐时从 LRU 端查找 (kernel/bio.c)
 
 原始 `bget` 的驱逐循环**正向**遍历链表（从 head 往下），改为**反向**遍历（从 tail 往回），找到最久未使用且 `refcnt==0` 的块：
 
@@ -89,7 +89,7 @@ for(b = bcache.head.prev; b != &bcache.head; b = b->prev) {
 }
 ```
 
-### 4. 在 brelse 时将块移到 MRU 端 (src/bio.c)
+### 4. 在 brelse 时将块移到 MRU 端 (kernel/bio.c)
 
 `brelse` 将 `refcnt` 减为 0 时，块重新变为可驱逐。为了让最近释放的块排在 LRU 链表的 MRU 侧（表示它"最近被用过"），在 `brelse` 的 `refcnt==0` 分支中也执行"移到 head 之后"操作：
 
@@ -130,17 +130,21 @@ if(b->refcnt == 0) {
 
 | 文件 | 改动类型 | 说明 |
 |------|---------|------|
-| src/bio.c | 修改 | `bget` 命中移到 MRU，驱逐从 LRU 端；`brelse` 移到 MRU 端 |
+| kernel/bio.c | 修改 | `bget` 命中移到 MRU，驱逐从 LRU 端；`brelse` 移到 MRU 端 |
 | include/buf.h | 修改（可选） | 在 `bcache` 结构中添加 `hit`/`miss` 计数器 |
 | user/lrucachetest.c | 新增 | 验证 LRU 命中率的测试程序 |
-| Makefile | 修改 | 添加 `lrucachetest` |
+| lab-Tests/lab-fs-03-lrucache/Makefile | 使用 | 幂等打补丁并一键启动 xv6（`make start`） |
 
 ## 验证
 
 ```bash
-make clean && make qemu-nox
-$ lrucachetest
-$ usertests
+cd lab-Tests/lab-fs-03-lrucache
+make start
+# 进入 xv6 shell 后
+lrucachetest
+usertests
+# Ctrl-A X 退出 QEMU 后恢复源码树
+make exit
 ```
 
 ### 验证目标

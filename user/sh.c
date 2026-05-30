@@ -3,6 +3,7 @@
 #include "types.h"
 #include "user.h"
 #include "fcntl.h"
+#include "fs.h"
 
 // Parsed command representation
 #define EXEC  1
@@ -52,6 +53,403 @@ struct backcmd {
 int fork1(void);  // Fork but panics on failure.
 void panic(char*);
 struct cmd *parsecmd(char*);
+
+#define HIST_MAX 16
+#define KEY_UP 0xE2
+#define KEY_DN 0xE3
+
+static char history[HIST_MAX][100];
+static int hist_start;
+static int hist_count;
+
+static int is_ws(char c);
+static int is_sym(char c);
+static int starts_with(const char *s, const char *prefix);
+static void trim_newline(char *s);
+static int is_blank_line(const char *s);
+static int streq(const char *a, const char *b);
+static char* history_get(int idx);
+static void history_add(const char *line);
+static void set_line(char *dst, int nbuf, int *len, const char *src);
+static void redraw_line(char *buf, int len, int *oldlen);
+static int collect_matches(char *prefix, char matches[][DIRSIZ+1], int maxm);
+static void apply_history(char *buf, int nbuf, int *len, int *oldlen, int pos);
+static void try_tab_complete(char *buf, int nbuf, int *len, int *oldlen);
+static int readline(char *buf, int nbuf);
+
+static int
+is_ws(char c)
+{
+  return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '\v';
+}
+
+static int
+is_sym(char c)
+{
+  return strchr("<|>&;()", c) != 0;
+}
+
+static int
+starts_with(const char *s, const char *prefix)
+{
+  int i;
+
+  for(i = 0; prefix[i]; i++){
+    if(s[i] != prefix[i])
+      return 0;
+  }
+  return 1;
+}
+
+static int
+streq(const char *a, const char *b)
+{
+  return strcmp(a, b) == 0;
+}
+
+static void
+trim_newline(char *s)
+{
+  int n;
+
+  n = strlen(s);
+  if(n > 0 && s[n-1] == '\n')
+    s[n-1] = 0;
+}
+
+static int
+is_blank_line(const char *s)
+{
+  int i;
+
+  for(i = 0; s[i]; i++){
+    if(!is_ws(s[i]))
+      return 0;
+  }
+  return 1;
+}
+
+static char*
+history_get(int idx)
+{
+  return history[(hist_start + idx) % HIST_MAX];
+}
+
+static void
+history_add(const char *line)
+{
+  int pos;
+  int n;
+  char tmp[100];
+  char *last;
+
+  n = strlen(line);
+  if(n > (int)sizeof(tmp) - 1)
+    n = sizeof(tmp) - 1;
+  memmove(tmp, line, n);
+  tmp[n] = 0;
+  trim_newline(tmp);
+  if(is_blank_line(tmp))
+    return;
+
+  if(hist_count > 0){
+    last = history_get(hist_count - 1);
+    if(streq(last, tmp))
+      return;
+  }
+
+  if(hist_count < HIST_MAX){
+    pos = (hist_start + hist_count) % HIST_MAX;
+    hist_count++;
+  } else {
+    pos = hist_start;
+    hist_start = (hist_start + 1) % HIST_MAX;
+  }
+
+  n = strlen(tmp);
+  if(n > (int)sizeof(history[pos]) - 1)
+    n = sizeof(history[pos]) - 1;
+  memmove(history[pos], tmp, n);
+  history[pos][n] = 0;
+}
+
+static void
+set_line(char *dst, int nbuf, int *len, const char *src)
+{
+  int n;
+
+  n = strlen(src);
+  if(n > nbuf - 1)
+    n = nbuf - 1;
+  memmove(dst, src, n);
+  dst[n] = 0;
+  *len = n;
+}
+
+static void
+redraw_line(char *buf, int len, int *oldlen)
+{
+  int i;
+
+  printf(2, "\r$ ");
+  if(len > 0)
+    write(2, buf, len);
+  for(i = len; i < *oldlen; i++)
+    write(2, " ", 1);
+  printf(2, "\r$ ");
+  if(len > 0)
+    write(2, buf, len);
+  *oldlen = len;
+}
+
+static int
+collect_matches(char *prefix, char matches[][DIRSIZ+1], int maxm)
+{
+  int i, j, fd, n, mcount, dup;
+  struct dirent de;
+  char name[DIRSIZ+1];
+  char *builtins[2];
+
+  mcount = 0;
+  builtins[0] = "cd";
+  builtins[1] = "exit";
+
+  for(i = 0; i < 2; i++){
+    if(starts_with(builtins[i], prefix)){
+      if(mcount < maxm){
+        n = strlen(builtins[i]);
+        if(n > DIRSIZ)
+          n = DIRSIZ;
+        memmove(matches[mcount], builtins[i], n);
+        matches[mcount][n] = 0;
+        mcount++;
+      }
+    }
+  }
+
+  fd = open(".", O_RDONLY);
+  if(fd < 0)
+    return mcount;
+
+  while((n = read(fd, &de, sizeof(de))) == sizeof(de)){
+    if(de.inum == 0)
+      continue;
+    memmove(name, de.name, DIRSIZ);
+    name[DIRSIZ] = 0;
+    for(i = DIRSIZ - 1; i >= 0; i--){
+      if(name[i] == 0)
+        continue;
+      break;
+    }
+    name[i+1] = 0;
+    if(!starts_with(name, prefix))
+      continue;
+
+    dup = 0;
+    for(j = 0; j < mcount; j++){
+      if(streq(matches[j], name)){
+        dup = 1;
+        break;
+      }
+    }
+    if(!dup && mcount < maxm){
+      n = strlen(name);
+      if(n > DIRSIZ)
+        n = DIRSIZ;
+      memmove(matches[mcount], name, n);
+      matches[mcount][n] = 0;
+      mcount++;
+    }
+  }
+  close(fd);
+  return mcount;
+}
+
+static void
+apply_history(char *buf, int nbuf, int *len, int *oldlen, int pos)
+{
+  if(pos < 0 || pos >= hist_count)
+    return;
+  set_line(buf, nbuf, len, history_get(pos));
+  redraw_line(buf, *len, oldlen);
+}
+
+static void
+try_tab_complete(char *buf, int nbuf, int *len, int *oldlen)
+{
+  int start, plen, mcount, i, mlen, newlen;
+  char prefix[100];
+  char matches[32][DIRSIZ+1];
+
+  start = *len;
+  while(start > 0 && !is_ws(buf[start-1]) && !is_sym(buf[start-1]))
+    start--;
+
+  plen = *len - start;
+  if(plen <= 0)
+    return;
+  if(plen >= (int)sizeof(prefix))
+    return;
+
+  memmove(prefix, buf + start, plen);
+  prefix[plen] = 0;
+
+  mcount = collect_matches(prefix, matches, 32);
+  if(mcount == 0)
+    return;
+
+  if(mcount == 1){
+    mlen = strlen(matches[0]);
+    newlen = start + mlen;
+    if(newlen + 1 >= nbuf)
+      return;
+    memmove(buf + start, matches[0], mlen);
+    buf[newlen] = ' ';
+    newlen++;
+    buf[newlen] = 0;
+    *len = newlen;
+    redraw_line(buf, *len, oldlen);
+    return;
+  }
+
+  printf(2, "\n");
+  for(i = 0; i < mcount; i++)
+    printf(2, "%s%s", matches[i], (i + 1 == mcount) ? "\n" : "  ");
+  redraw_line(buf, *len, oldlen);
+}
+
+static int
+readline(char *buf, int nbuf)
+{
+  int len, oldlen, n;
+  uchar c, c1, c2;
+  int hist_pos;
+  char scratch[100];
+  int scratch_len;
+
+  memset(buf, 0, nbuf);
+  len = 0;
+  oldlen = 0;
+  hist_pos = -1;
+  scratch[0] = 0;
+  scratch_len = 0;
+
+  printf(2, "$ ");
+  for(;;){
+    n = read(0, &c, 1);
+    if(n < 1){
+      if(len == 0)
+        return -1;
+      break;
+    }
+
+    if(c == '\n' || c == '\r'){
+      if(len < nbuf - 1)
+        buf[len++] = '\n';
+      buf[len] = 0;
+      history_add(buf);
+      return 0;
+    }
+
+    if(c == 127 || c == '\b'){
+      if(len > 0){
+        len--;
+        buf[len] = 0;
+        redraw_line(buf, len, &oldlen);
+      }
+      continue;
+    }
+
+    if(c == '\t'){
+      try_tab_complete(buf, nbuf, &len, &oldlen);
+      continue;
+    }
+
+    if(c == KEY_UP){
+      if(hist_count == 0)
+        continue;
+      if(hist_pos == -1){
+        memmove(scratch, buf, len);
+        scratch[len] = 0;
+        scratch_len = len;
+        hist_pos = hist_count - 1;
+      } else if(hist_pos > 0){
+        hist_pos--;
+      }
+      apply_history(buf, nbuf, &len, &oldlen, hist_pos);
+      continue;
+    }
+
+    if(c == KEY_DN){
+      if(hist_pos == -1)
+        continue;
+      if(hist_pos < hist_count - 1){
+        hist_pos++;
+        apply_history(buf, nbuf, &len, &oldlen, hist_pos);
+      } else {
+        hist_pos = -1;
+        if(scratch_len > nbuf - 1)
+          scratch_len = nbuf - 1;
+        memmove(buf, scratch, scratch_len);
+        len = scratch_len;
+        buf[len] = 0;
+        redraw_line(buf, len, &oldlen);
+      }
+      continue;
+    }
+
+    if(c == 27){
+      if(read(0, &c1, 1) != 1)
+        continue;
+      if(read(0, &c2, 1) != 1)
+        continue;
+      if(c1 == '[' && c2 == 'A'){
+        if(hist_count == 0)
+          continue;
+        if(hist_pos == -1){
+          memmove(scratch, buf, len);
+          scratch[len] = 0;
+          scratch_len = len;
+          hist_pos = hist_count - 1;
+        } else if(hist_pos > 0){
+          hist_pos--;
+        }
+        apply_history(buf, nbuf, &len, &oldlen, hist_pos);
+      } else if(c1 == '[' && c2 == 'B'){
+        if(hist_pos == -1)
+          continue;
+        if(hist_pos < hist_count - 1){
+          hist_pos++;
+          apply_history(buf, nbuf, &len, &oldlen, hist_pos);
+        } else {
+          hist_pos = -1;
+          if(scratch_len > nbuf - 1)
+            scratch_len = nbuf - 1;
+          memmove(buf, scratch, scratch_len);
+          len = scratch_len;
+          buf[len] = 0;
+          redraw_line(buf, len, &oldlen);
+        }
+      }
+      continue;
+    }
+
+    if(c >= 32 && c < 127){
+      if(len < nbuf - 1){
+        buf[len++] = c;
+        buf[len] = 0;
+        if(hist_pos != -1){
+          hist_pos = -1;
+          memmove(scratch, buf, len);
+          scratch[len] = 0;
+          scratch_len = len;
+        }
+      }
+      continue;
+    }
+  }
+  return -1;
+}
 
 // Execute cmd.  Never returns.
 void
@@ -133,10 +531,7 @@ runcmd(struct cmd *cmd)
 int
 getcmd(char *buf, int nbuf)
 {
-  printf(2, "$ ");
-  memset(buf, 0, nbuf);
-  gets(buf, nbuf);
-  if(buf[0] == 0) // EOF
+  if(readline(buf, nbuf) < 0)
     return -1;
   return 0;
 }
