@@ -14,4 +14,7 @@ build/xv6kernel
 build/kernelmemfs
 build/mkfs
 .gdbinit
+.consult/
+# skill 演化：tracker 私人遥测忽略，config.yaml/changelog.md 提交
+.claude/evolution/tracker.md
 lab-Tests/

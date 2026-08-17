@@ -21,69 +21,22 @@ xv6-public/
 └── build/         # 编译产物目录 (由 make 自动创建)
 ```
 
-## 架构概览
+## OS 知识索引（canonical 指针）
 
-| 子系统 | 源文件 | 核心概念 |
-|--------|--------|---------|
-| 启动 | boot/bootasm.S, boot/bootmain.c, kernel/entry.S, kernel/main.c | Multiboot、保护模式、分页、GDT/IDT |
-| 进程 | kernel/proc.c, kernel/proc.h, kernel/swtch.S | PCB (struct proc)、上下文切换、调度器、状态机 |
-| 内存 | kernel/vm.c, kernel/kalloc.c, kernel/memlayout.h, kernel/mmu.h | 两级页表、4KB 页、内核/用户地址空间 |
-| 文件系统 | kernel/fs.c, include/fs.h, kernel/bio.c, kernel/file.c, kernel/file.h, kernel/log.c | Unix FFS、inode、缓冲区缓存、预写日志 |
-| I/O 设备 | kernel/console.c, kernel/uart.c, kernel/kbd.c, kernel/ide.c | 轮询 I/O、中断驱动磁盘 |
-| 陷阱/中断 | kernel/trap.c, kernel/trapasm.S, build/vectors.S | IDT、trap frame、系统调用通过 INT 64 |
-| 系统调用 | kernel/syscall.c, include/syscall.h, kernel/sysproc.c, kernel/sysfile.c | 21 个系统调用、argint/argptr/argstr |
-| 同步 | kernel/spinlock.c, kernel/spinlock.h, kernel/sleeplock.c, kernel/sleeplock.h | 自旋锁 + pushcli/popcli、睡眠锁 via sleep/wakeup |
-| 用户程序 | user/cat.c, user/echo.c, user/grep.c, user/sh.c, user/ls.c, ... | 简单 Unix 工具，链接 user/ulib.c |
-| 中断控制 | kernel/picirq.c, kernel/ioapic.c, kernel/lapic.c, kernel/mp.c | APIC、IOAPIC、多处理器支持 |
+OS 知识（术语、架构、内存布局、执行流程、常量、设计决策）的**唯一真源**在 `.claude/reference/`，此处只放指针：
 
-## 关键常量 (kernel/param.h, kernel/memlayout.h)
+| 想查什么 | canonical 真源 |
+|---------|---------------|
+| OS 术语对照（进程/调度/页表/inode/…） | `reference/os-concepts.md` |
+| 架构概览（子系统→源文件→概念） | `reference/file-map.md` |
+| 内存布局（物理内存 / 进程虚拟地址空间） | `reference/os-concepts.md` |
+| 关键常量（NPROC/KERNBASE/PHYSTOP/…） | `reference/file-map.md` |
+| 执行流程（启动序列 / 第一进程 / 系统调用路径） | `reference/os-concepts.md` |
+| 文件职责 / 修改清单 / Lab 规范 | `reference/file-map.md` |
+| panic 定位 / GDB-QEMU 手册 | `reference/panic-table.md` |
+| 五维评审框架 / 状态机 / 不变量 | `reference/review-framework.md` |
 
-- NPROC=64, NCPU=8, NOFILE=16, NFILE=100, NINODE=50
-- KSTACKSIZE=4096 (4KB 内核栈), PGSIZE=4096
-- KERNBASE=0x80000000, PHYSTOP=0xE0000000, EXTMEM=0x100000
-
-## 内存布局
-
-```
-物理内存:
-0x00000000 ┌─────────────────┐
-           │   I/O Space     │ [0, EXTMEM=0x100000)
-0x00100000 ├─────────────────┤
-           │   Kernel Code   │
-           │   Kernel Data   │
-           │   Free Pages    │ [kalloc 管理的空闲内存]
-0xE0000000 ├─────────────────┤ PHYSTOP
-           │   (unmapped)    │
-0xFE000000 ├─────────────────┤ DEVSPACE
-           │   MMIO Devices  │
-0xFFFFFFFF └─────────────────┘
-
-进程虚拟地址空间:
-0x00000000 ┌─────────────────┐
-           │   User Text     │ (ELF 加载, 只读/执行)
-           │   User Data/BSS │
-           │   User Heap     │ (sbrk 向上增长)
-           │   ...           │
-           │   User Stack    │ (1 页, 向下增长)
-0x80000000 ├─────────────────┤ KERNBASE
-           │   Kernel Text   │ (通过 P2V 映射到物理地址)
-           │   Kernel Data   │
-           │   Free Memory   │
-0xFE000000 ├─────────────────┤
-           │   Devices       │ (恒等映射)
-0xFFFFFFFF └─────────────────┘
-```
-
-## 执行流程
-
-### 启动序列
-BIOS -> boot/bootasm.S (实模式->保护模式, 开分页) -> boot/bootmain.c (从磁盘加载 ELF 内核) -> kernel/entry.S (设栈, 跳 main) -> kernel/main.c -> kinit1 -> kvmalloc -> mpinit -> lapicinit -> seginit -> ... -> userinit -> scheduler()
-
-### 第一个用户进程
-kernel/initcode.S (用户模式, exec("/init")) -> user/init.c (打开 console, fork+exec sh) -> user/sh.c (shell)
-
-### 系统调用路径
-用户代码 (user/usys.S: movl $SYS_xxx, %eax; int $T_SYSCALL) -> build/vectors.S -> kernel/trapasm.S (构建 trapframe) -> kernel/trap.c -> kernel/syscall.c (查 syscalls[] 表) -> sys_*
+> 需要 OS 知识时用 Read 读对应 reference 文件，不要凭记忆或在本文件重建知识表。
 
 ## 编码规范
 
@@ -231,32 +184,54 @@ sed -i 's/stressfs wc zombie uidtest fifotest$$/stressfs wc zombie uidtest fifot
 
 > 参考实现：[lab-Tests/lab-sched-01-priority/Makefile](lab-Tests/lab-sched-01-priority/Makefile)
 
-## 可用 Skills
+## Claude Code 协作体系（三层解耦）
 
-| Skill | 命令 | 用途 |
-|-------|------|------|
-| xv6-dev | `/xv6-dev` | 开发新功能，每步带 OS 概念解释 |
-| xv6-review | `/xv6-review` | 从 OS 设计角度评审代码变更 |
-| xv6-explain | `/xv6-explain` | 解释 xv6 代码，映射到 OS 教材概念 |
-| xv6-debug | `/xv6-debug` | 诊断 xv6 崩溃、死锁、异常行为 |
-| xv6-simulate | `/xv6-simulate` | 模拟追踪系统调用、调度、内存操作 |
+本仓库的 AI 协作体系为三层架构：**skill(编排层) → agent(能力层) → reference(知识层)**。共享知识只存在于 `.claude/reference/`，agent 通过 Read 按需引用，不在 skill/agent 内复制知识表。
 
-## OS 核心术语对照
+### 编排规则（防环三律）
 
-| English | 中文 | xv6 中的体现 |
-|---------|------|-------------|
-| Process | 进程 | struct proc, kernel/proc.c |
-| Scheduling | 调度 | scheduler(), round-robin |
-| Context Switch | 上下文切换 | kernel/swtch.S, sched() |
-| Page Table | 页表 | walkpgdir(), kernel/vm.c |
-| Virtual Memory | 虚拟内存 | allocuvm(), deallocuvm() |
-| System Call | 系统调用 | kernel/syscall.c, user/usys.S, INT 64 |
-| Inode | 索引节点 | kernel/fs.c: ialloc, iget, ilock |
-| Buffer Cache | 缓冲区缓存 | kernel/bio.c: bread, brelse |
-| Write-Ahead Log | 预写日志 | kernel/log.c: begin_op, end_op |
-| Spinlock | 自旋锁 | kernel/spinlock.c: acquire, release |
-| Sleep Lock | 睡眠锁 | kernel/sleeplock.c: acquiresleep |
-| Trap | 陷阱/中断 | kernel/trap.c, kernel/trapasm.S |
-| File Descriptor | 文件描述符 | struct file, kernel/file.c |
-| Pipe | 管道 | kernel/pipe.c: piperead, pipewrite |
-| Bootloader | 引导加载程序 | boot/bootasm.S, boot/bootmain.c |
+1. **skill → agent 单跳**：skill 只派发 `.claude/agents/` 下的 agent，永不触发其他 skill
+2. **agent 是叶子**：agent 工具面不含 `Agent`/`Skill`，不能调度任何东西、环在结构上不可能存在
+3. **同流不重入**：一次编排中同一 agent 最多调用一次
+
+### Skills（编排层，薄前端）
+
+| Skill | 命令 | 触发场景 | 编排流（primary → 视角） |
+|-------|------|---------|---------------------------|
+| xv6-dev | `/xv6-dev` | 开发新功能（syscall/调度/内存） | developer → explainer ∥ simulator ∥ reviewer |
+| xv6-debug | `/xv6-debug` | 崩溃、panic、死锁、竞态、内存损坏 | debugger → explainer ∥ reviewer |
+| xv6-review | `/xv6-review` | 评审 commit/PR/变更 | reviewer → explainer（限量深潜） |
+| xv6-explain | `/xv6-explain` | 理解代码设计决策/OS 理论 | explainer → simulator（同对象） |
+| xv6-simulate | `/xv6-simulate` | 逐步理解操作的执行过程 | simulator → explainer（反向单向） |
+
+### Agents（能力层，叶子，可复用）
+
+| Agent | 职责 | 工具面 | 必读 reference |
+|-------|------|--------|---------------|
+| xv6-developer | 实现功能，产出代码变更 + 设计决策记录 | Read/Grep/Glob/Bash/Edit/Write | file-map.md, os-concepts.md |
+| xv6-debugger | 诊断根因，产出修复草案 | Read/Grep/Glob/Bash | panic-table.md, file-map.md |
+| xv6-explainer | 静态理解：设计决策 + OS 概念映射 | Read/Grep/Glob | os-concepts.md, file-map.md |
+| xv6-reviewer | 评审验证：五维评审 + make analyze | Read/Grep/Glob/Bash | review-framework.md, file-map.md |
+| xv6-simulator | 动态追踪：执行路径 + 状态变化 | Read/Grep/Glob | os-concepts.md, file-map.md |
+
+### Reference（知识层，单一事实源）
+
+| 文件 | 内容 | 消费者 |
+|------|------|--------|
+| `.claude/reference/os-concepts.md` | OS 概念→xv6 映射、设计决策速查、对比表 | explainer/simulator/developer |
+| `.claude/reference/file-map.md` | 目录/文件职责、修改清单、Lab 规范 | developer/reviewer/debugger |
+| `.claude/reference/panic-table.md` | panic 定位表、GDB/QEMU 命令手册、竞态协议 | debugger/reviewer |
+| `.claude/reference/review-framework.md` | 五维评审清单、状态机、不变量锚点 | reviewer/developer/debugger |
+
+**维护规则**：修改 OS 概念映射、文件清单、panic 表、评审框架时只改对应 reference 文件，禁止在各 skill/agent 内另建副本。
+
+### 边界原则（通用 vs repo 专属）
+
+**判据一句话**：把一个 artifact 放到另一个 repo（如 FreeRTOS），不改动是否仍成立？
+
+- **成立**（与领域无关）→ 用户级 `~/.claude/`：方法论/引擎（solution-consult、skill-evolution、systematic-debugging、consult.py）
+- **不成立**（含 xv6/x86/kernel/labs 领域知识）→ 本 repo `.claude/`：5 skill / 5 agent / 4 reference / evolution / tests
+
+### 自演化闭环说明
+
+本 repo 的 skill 工程依赖用户级 `skill-evolution`（自演化引擎）消费 `.claude/evolution/` 下的偏差记录。该引擎不随 repo 分发；缺失时只记录偏差、不做自动演化。获取提示见 `.claude/evolution/config.yaml` 注释。

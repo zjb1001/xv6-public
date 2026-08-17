@@ -1,0 +1,38 @@
+# xv6 skill 工程演化配置（repo 适配层，随仓库提交）
+#
+# 消费者：用户级 skill-evolution / solution-consult 通过「读当前 repo 的
+#          .claude/evolution/config.yaml」定位本 repo 的演化落点与偏差矩阵。
+# 缺失时：消费者优雅降级（跳过演化，只记录偏差），保证「换 repo 仍成立」。
+
+repo:
+  # 全相对路径，勿硬编码绝对路径（public 教学 repo，学生 clone 到任意路径）
+  tracker: evolution/tracker.md
+  changelog: evolution/changelog.md
+
+  # patch 白名单：skill-evolution 可自动修改（v1 只写建议，v2 观察期才启用）
+  patch_whitelist:
+    - .claude/skills/*/SKILL.md          # 编排段 / 上报段
+    - .claude/reference/*.md             # 知识表
+    - .claude/evolution/changelog.md
+    # 永不变项（不在白名单）：agent frontmatter tools、防环三律、CLAUDE.md 宪法
+
+# R1-R7 偏差分类矩阵（单一事实源）
+# skill 上报节只「读本文件自检」，不复制此矩阵文本（防再漂移）
+categories:
+  R1: { name: 路由偏差,     layer: skills,          desc: "派发块外 agent，或该派发却自己做了" }
+  R2: { name: 契约偏差,     layer: agents,          desc: "agent 输出缺锚点，收拢手工补救" }
+  R3: { name: 知识缺口,     layer: reference,       desc: "reference 缺内容，agent 临时从源码重建" }
+  R4: { name: 顺序偏差,     layer: skills,          desc: "实际执行与编排块不符（含重入）" }
+  R5: { name: 教育收尾缺失, layer: skills,          desc: "三视角汇总被跳过或流于形式" }
+  R6: { name: 触发偏差,     layer: skills,          desc: "误触发 / 该触发未触发" }
+  R7: { name: 方案落地偏差, layer: solution-consult, desc: "会诊落地时实际与方案的偏离" }
+
+# 领域提示：xv6 是 x86 版（非 RISC-V），skill 用中文
+domain:
+  arch: x86
+  language: zh-CN
+  note: "训练数据中 xv6 默认 RISC-V 版；涉及架构细节以本 repo kernel/ 源码为准，勿凭旧知识"
+
+# 获取提示：本 repo 闭环依赖用户级 skill-evolution
+provisioning:
+  skill_evolution: "用户级 ~/.claude/skills/skill-evolution（不随 repo 分发）。缺失时只记偏差、不做自动演化；获取方式见该 skill 自身。"

@@ -98,6 +98,8 @@ ifneq ($(shell $(CC) -dumpspecs 2>/dev/null | grep -e '[^f]nopie'),)
 CFLAGS += -fno-pie -nopie
 endif
 
+CFLAGS += $(EXTRA_CFLAGS)
+
 # Default target
 all: xv6.img fs.img
 
@@ -364,3 +366,19 @@ grub-qemu: $(B)/xv6.iso fs.img xv6.img
 	  -drive file=fs.img,index=1,media=disk,format=raw \
 	  -cdrom $(B)/xv6.iso -boot d \
 	  -smp $(CPUS) -m 512
+
+# ---------------------------------------------------------------
+# Static Analysis using GCC’s built-in static analyzer (-fanalyzer)
+# ---------------------------------------------------------------
+.PHONY: analyze
+analyze:
+	@echo "=== Running GCC Static Analysis (-fanalyzer) on Kernel ==="
+	$(MAKE) EXTRA_CFLAGS="-fanalyzer -Wno-error" -B kernel
+
+# ---------------------------------------------------------------
+# Skill engineering health check (.claude/ 静态不变式)
+# ---------------------------------------------------------------
+.PHONY: skill-check
+skill-check:
+	@command -v python3 >/dev/null 2>&1 || { echo "❌ 需要 python3 才能运行 skill-check"; exit 1; }
+	python3 .claude/tests/run.py
